@@ -1,0 +1,364 @@
+#include "my2.h"  
+
+// 注册请求处理
+void registerReq(int sockfd, MSG *msg) 
+{
+    //清空消息结构体
+    memset(msg, 0, sizeof(MSG));
+    //设置消息类型为注册请求
+    msg->type = Register;  
+    
+    printf("用户名："); 
+    scanf("%s", msg->username);  
+    printf("密码："); 
+    scanf("%s", msg->passwd);    
+    
+    // 发送注册请求
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的注册结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+  
+    printf("%s\n", msg->msg);
+}
+
+// 登录请求处理
+void loginReq(int sockfd, MSG *msg) 
+{
+    memset(msg, 0, sizeof(MSG));
+    // 设置消息类型为登录请求
+    msg->type = login;  
+    
+    printf("用户名："); 
+    scanf("%s", msg->username);
+    printf("密码："); 
+    scanf("%s", msg->passwd);
+    
+    // 发送登录请求
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的登录结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+    
+    // 根据服务器返回值判断是否登录成功
+    if (msg->type == success) 
+    {  
+        printf("%s\n", msg->msg);  
+        showMainMenu(sockfd, msg); //进入菜单
+    } 
+    else 
+    {
+        printf("%s\n", msg->msg);  //打印登录失败原因根据服务器端返回的宏值得到对应错误
+    }
+}
+
+// 发布书籍请求处理
+void publishBookReq(int sockfd, MSG *msg) 
+{
+    // 临时保存当前用户名
+    char temp_un[max_name_len]; 
+    strcpy(temp_un, msg->username);
+
+    // 清空消息结构体，准备存储发布书籍的信息
+    memset(msg, 0, sizeof(MSG));
+    //设置消息类型为发布书籍请求
+    msg->type = publish_book;  
+
+    strcpy(msg->username, temp_un);
+    // 获取用户输入的书籍信息
+    printf("书名："); 
+    scanf("%s", msg->book_name);
+    printf("作者："); 
+    scanf("%s", msg->author);
+    printf("品相(1-5)："); 
+    scanf("%d", &msg->condition);  // 品相用整数1-5表示
+    printf("取书地点："); 
+    scanf("%s", msg->location);
+    printf("封面文件名(保存在/home/linux中的文件只需输入文件名):"); 
+    scanf("%s", msg->filename);    // 封面图片的名字
+    
+    // 构建封面图片的完整路径
+    char pathname[100] = {0};
+    sprintf(pathname,"/home/linux/%s",msg->filename);
+    
+    // 打开封面图片文件
+    int fd = open(pathname, O_RDONLY);
+    if (fd == -1) 
+    {  
+        printf("封面文件打开失败：%s\n", strerror(errno));  // 打印错误原因
+        return;  
+    }
+    
+    // 读取图片数据到消息结构体的二进制缓冲区
+    // 预留1字节防止溢出
+    msg->size = read(fd, msg->filedata, max_data_len-1); 
+    close(fd);  
+    
+  
+    if (msg->size <= 0) {
+        printf("封面读取失败\n");
+        return;  
+    }
+    
+    // 发送书籍信息和封面数据
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的发布结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+    // 打印结果
+    printf("%s\n", msg->msg);
+}
+
+// 搜索书籍请求处理
+void searchBookReq(int sockfd, MSG *msg) 
+{
+ 
+    char temp_un[max_name_len];  
+    strcpy(temp_un, msg->username);
+    
+    memset(msg, 0, sizeof(MSG));
+    // 设置消息类型为搜索书籍请求
+    msg->type = search_book;  
+   
+    printf("搜索书名关键词："); 
+    scanf("%s", msg->book_name);
+    
+    strcpy(msg->username, temp_un);
+    // 发送搜索请求
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的搜索结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+
+    printf("%s\n", msg->msg);
+    
+    // 打印书籍信息
+    if (msg->count > 0) 
+    {
+        printf("===============================\n");
+        printf("ID  书名           作者         品相  地点       状态\n");
+        printf("-----------------------------------\n");
+        int i;
+        // 循环打印每本书的详细信息
+        for (i = 0; i < msg->count; i++) 
+        {
+            printf("%-3d %-15s %-12s %-5d %-10s %s\n",
+                   msg->books[i].id,          // 书籍ID
+                   msg->books[i].book_name,   // 书名
+                   msg->books[i].author,      // 作者
+                   msg->books[i].condition,   // 品相
+                   msg->books[i].location,    // 取书地点
+                   // 将数字0, 1转换为文字（0=可借阅，1=已借出）
+                   msg->books[i].status == 0 ? "可借阅" : "已借出");
+        }
+        printf("===============================\n");
+    }
+}
+
+// 借阅书籍请求处理
+void borrowBookReq(int sockfd, MSG *msg) 
+{
+
+    char temp_un[max_name_len];  
+    strcpy(temp_un, msg->username);
+    
+    memset(msg, 0, sizeof(MSG));
+    // 设置消息类型为借阅请求
+    msg->type = borrow_book;  
+    
+    printf("借阅书籍ID："); 
+    scanf("%d", &msg->book_id);
+    
+
+    strcpy(msg->username, temp_un);
+    // 发送借阅请求
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的借阅结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+
+    printf("%s\n", msg->msg);
+}
+
+// 归还书籍请求处理
+void returnBookReq(int sockfd, MSG *msg) 
+{
+    char temp_un[max_name_len]; 
+    strcpy(temp_un, msg->username);
+    
+    memset(msg, 0, sizeof(MSG));
+    // 设置消息类型为归还请求
+    msg->type = return_book;  
+    
+    strcpy(msg->username, temp_un);
+    
+    printf("归还书籍ID："); 
+    scanf("%d", &msg->book_id);
+ 
+    // 发送归还请求
+    send(sockfd, msg, sizeof(MSG), 0);
+    // 接收服务器返回的归还结果
+    recv(sockfd, msg, sizeof(MSG), 0);
+
+    printf("%s\n", msg->msg);
+}
+
+// 我的书籍请求处理
+void myBooksReq(int sockfd, MSG *msg) 
+{
+  
+    char temp_un[max_name_len];  
+    strcpy(temp_un, msg->username);
+    
+ 
+    memset(msg, 0, sizeof(MSG));
+ 
+    msg->type = my_books;  
+  
+    strcpy(msg->username, temp_un);
+    
+    send(sockfd, msg, sizeof(MSG), 0);
+
+    recv(sockfd, msg, sizeof(MSG), 0);
+
+    printf("%s\n", msg->msg);
+    
+    // 有发布的书籍则打印书籍信息
+    if (msg->count > 0) 
+    {
+        printf("===============================\n");
+        printf("ID  书名           作者         品相  地点       状态\n");
+        printf("-----------------------------------\n");
+        int i;
+        for (i = 0; i < msg->count; i++) {
+            printf("%-3d %-15s %-12s %-5d %-10s %s\n",
+                   msg->books[i].id,
+                   msg->books[i].book_name,
+                   msg->books[i].author,
+                   msg->books[i].condition,
+                   msg->books[i].location,
+                   msg->books[i].status == 0 ? "可借阅" : "已借出");
+        }
+        printf("===============================\n");
+    }
+}
+
+// 借阅历史请求处理函数
+void borrowHistoryReq(int sockfd, MSG *msg) 
+{
+    char temp_un[max_name_len]; 
+    strcpy(temp_un, msg->username);
+    
+    memset(msg, 0, sizeof(MSG));
+    // 设置消息类型为借阅历史请求
+    msg->type = borrow_history; 
+   
+    strcpy(msg->username, temp_un);
+    
+    send(sockfd, msg, sizeof(MSG), 0);
+
+    recv(sockfd, msg, sizeof(MSG), 0);
+
+    printf("%s\n", msg->msg);
+    
+    // 有借阅记录则打印详细信息
+    if (msg->count > 0) 
+    {
+        printf("=============================================\n");
+        printf("书籍ID  书名           借阅时间           归还状态\n");
+        printf("---------------------------------------------\n");
+        int i;
+        for (i = 0; i < msg->count; i++) 
+        {
+            printf("%-7d %-15s %-20s %s\n",
+                   msg->borrows[i].book_id,      
+                   msg->borrows[i].book_name,     
+                   msg->borrows[i].borrow_time,    
+                   // return_time不为空则显示时间否则显示"未归还"
+                   strlen(msg->borrows[i].return_time) > 0 ? 
+                   msg->borrows[i].return_time : "未归还");
+        }
+        printf("=============================================\n");
+    }
+}
+
+//实现菜单显示
+void showMainMenu(int sockfd, MSG *msg) 
+{
+    int choice;
+    while (1) 
+    {
+        printf("\n===== 校园二手书平台 =====\n");
+        printf("1.发布书籍  2.搜索书籍  3.借阅书籍\n");
+        printf("4.归还书籍  5.我的书籍  6.借阅历史\n");
+        printf("7.退出系统\n");
+        printf("=========================\n");
+        printf("选择："); 
+        scanf("%d", &choice);  
+        
+        switch (choice) {
+            case 1: publishBookReq(sockfd, msg); break;  // 发布书籍
+            case 2: searchBookReq(sockfd, msg); break;   // 搜索书籍
+            case 3: borrowBookReq(sockfd, msg); break;   // 借阅书籍
+            case 4: returnBookReq(sockfd, msg); break;   // 归还书籍
+            case 5: myBooksReq(sockfd, msg); break;      // 我的书籍
+            case 6: borrowHistoryReq(sockfd, msg); break;// 借阅历史
+            case 7:  // 退出系统
+                msg->type = Exit;  
+                send(sockfd, msg, sizeof(MSG), 0); 
+                printf("再见！\n");
+                close(sockfd); 
+                exit(0);        
+            default: printf("无效选择\n"); 
+        }
+    }
+}
+
+// 实现客户端通信
+int main(int argc, char *argv[]) 
+{
+   
+    if (argc != 3) 
+    {
+        printf("请输入：可执行文件+ip地址+端口号\n");
+        exit(-1);  
+    }
+    
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    struct sockaddr_in addr = 
+    {
+        AF_INET,                 
+        htons(atoi(argv[2])),    
+        inet_addr(argv[1])       
+    };
+    
+
+    if (connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) 
+    {
+        perror("连接失败");  
+        exit(-1);           
+    }
+    printf("已连接服务器\n");  
+    
+    MSG msg;  
+    int choice;
+    
+    while (1) 
+    {
+        printf("\n===== 登录界面 =====\n");
+        printf("1.注册  2.登录  3.退出\n");
+        printf("===================\n");
+        printf("选择："); 
+        scanf("%d", &choice);  
+        
+        switch (choice) 
+        {
+            case 1: registerReq(sockfd, &msg); break;  // 注册
+            case 2: loginReq(sockfd, &msg); break;     // 登录
+            case 3:  // 退出程序
+                close(sockfd);  
+                printf("再见！\n");
+                exit(0);
+            default: printf("无效选择\n");  
+        }
+    }
+    
+    return 0;
+}
+
