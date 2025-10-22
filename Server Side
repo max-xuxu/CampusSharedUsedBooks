@@ -1,4 +1,4 @@
-#include "my2.h"  
+#include "MyHeadFile.h"  
 
 // 注册请求处理
 void registerReq(int sockfd, MSG *msg) 
