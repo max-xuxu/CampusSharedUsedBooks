@@ -1,4 +1,4 @@
-#include "my2.h" 
+#include "MyHeadFile.h" 
 
 //全局数据库指针
 sqlite3 *db = NULL;
